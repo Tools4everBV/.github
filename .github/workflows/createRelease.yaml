@@ -1,6 +1,6 @@
 ##############################
 # Workflow: Create Release
-# Version:  0.0.2
+# Version:  0.0.3
 ##############################
 name: Create Release
 
