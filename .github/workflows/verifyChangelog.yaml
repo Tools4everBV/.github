@@ -1,6 +1,6 @@
 ####################################
 # Workflow: Verify CHANGELOG Updated
-# Version:  0.0.1
+# Version:  0.0.2
 ####################################
 name: Verify CHANGELOG Updated
 on:
