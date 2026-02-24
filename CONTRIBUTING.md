@@ -15,7 +15,7 @@ We welcome all types of contributions, from bug reports to documentation updates
 
 ## Before making contributions
 
-Keep in mind that each application and each implementation is unique and may require specific code to interact with its API, database, or other systems. For this reason, including highly specific or non-generic code in the repository is generally not recommended, as it may not be applicable to other implementations. A better approach is to provide a solid, flexible foundation that can be adapted and customized to your specific needs. The goal is to give contributors a starting point for implementing and tailoring connectors, whether source or target, while striking a balance between guidance and flexibility that makes the repository useful to a wide audience.
+Keep in mind that each application and each implementation is unique and may require specific code to interact with its API, database, or other systems. For this reason, including highly specific or non-generic code in the code is generally not recommended, as it may not be applicable to other implementations. A better approach is to provide a solid, flexible foundation that can be adapted and customized to your specific needs. The goal is to give contributors a starting point for implementing and tailoring a connector, SA form or SA action, while striking a balance between guidance and flexibility that makes the repository useful to a wide audience.
 
 ## How can I contribute?
 
