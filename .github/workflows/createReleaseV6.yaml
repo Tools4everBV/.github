@@ -6,43 +6,74 @@ name: Create Release
 
 on:
   workflow_call:
-  
+    inputs:
+      version:
+        description: 'Version number (e.g., v1.0.0). Leave blank to use the latest version from CHANGELOG.md.'
+        required: false
+        type: string
+
 permissions:
   contents: write
 
 jobs:
-  release:
+  create-release:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
-      - name: Check if CHANGELOG.md changed
-        id: check
+      - name: Check if CHANGELOG changed
+        id: changelog
         run: |
-          CHANGED=$(git log origin/main..HEAD --name-only --pretty=format: | grep 'CHANGELOG.md' || true)
-          echo "Changed files: $CHANGED"
-          if [ -n "$CHANGED" ]; then
-            echo "release=true" >> $GITHUB_OUTPUT
+          if git diff --name-only HEAD^ HEAD | grep -q "CHANGELOG.md"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
           else
-            echo "release=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Extract version
-        if: steps.check.outputs.release == 'true'
+      - name: Determine Version
+        if: steps.changelog.outputs.changed == 'true'
         run: |
-          VERSION=$(grep -m1 '^## \[' CHANGELOG.md | sed -E 's/## \[(.*)\].*/\1/')
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            if [ -f CHANGELOG.md ]; then
+              VERSION=$(grep -oP '^## \[\K[^]]+' CHANGELOG.md | head -n 1)
+              if [ -z "$VERSION" ]; then
+                echo "No versions found in CHANGELOG.md."
+                exit 1
+              fi
+            else
+              echo "CHANGELOG.md not found. Cannot determine version."
+              exit 1
+            fi
+          fi
+
+          [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION_NO_V=${VERSION#v}" >> $GITHUB_ENV
 
-      - name: Extract release notes
-        if: steps.check.outputs.release == 'true'
+      - name: Extract Release Notes from CHANGELOG.md
+        if: steps.changelog.outputs.changed == 'true' && inputs.version == ''
         run: |
-          awk '/## \['"${VERSION}"'\]/{flag=1; next} /## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
+          awk '/## \['"${VERSION_NO_V}"'\]/{flag=1; next} /## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
 
-      - name: Create release
-        if: steps.check.outputs.release == 'true'
+          if [ ! -s release_notes.txt ]; then
+            echo "No release notes found for version ${VERSION_NO_V}."
+            exit 1
+          fi
+
+      - name: Default Release Notes
+        if: steps.changelog.outputs.changed == 'true' && inputs.version != ''
+        run: |
+          echo "Release notes not provided for version ${VERSION}." > release_notes.txt
+
+      - name: Create GitHub Release
+        if: steps.changelog.outputs.changed == 'true'
         run: |
           gh release create "${VERSION}" \
             --title "${VERSION}" \
