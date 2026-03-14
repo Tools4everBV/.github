@@ -1,0 +1,51 @@
+##############################
+# Workflow: Create Release
+# Version:  0.0.6
+##############################
+name: Create Release
+
+on:
+  workflow_call:
+  
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if CHANGELOG.md changed
+        id: check
+        run: |
+          CHANGED=$(git log origin/main..HEAD --name-only --pretty=format: | grep 'CHANGELOG.md' || true)
+          echo "Changed files: $CHANGED"
+          if [ -n "$CHANGED" ]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          else
+            echo "release=false" >> $GITHUB_OUTPUT
+
+      - name: Extract version
+        if: steps.check.outputs.release == 'true'
+        run: |
+          VERSION=$(grep -m1 '^## \[' CHANGELOG.md | sed -E 's/## \[(.*)\].*/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Extract release notes
+        if: steps.check.outputs.release == 'true'
+        run: |
+          awk '/## \['"${VERSION}"'\]/{flag=1; next} /## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
+
+      - name: Create release
+        if: steps.check.outputs.release == 'true'
+        run: |
+          gh release create "${VERSION}" \
+            --title "${VERSION}" \
+            --notes-file release_notes.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
