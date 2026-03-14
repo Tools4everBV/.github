@@ -1,5 +1,8 @@
-name: PRGovernance
-
+####################################
+# Workflow: Verify CHANGELOG
+# Version:  0.0.3
+####################################
+name: VerifyChangelog
 on:
   workflow_call:
   pull_request:
