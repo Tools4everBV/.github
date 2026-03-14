@@ -111,15 +111,3 @@ jobs:
             
                           core.setFailed("CHANGELOG.md must be updated.");
                         }
-
-  auto-merge-ignore:
-    needs: analyze-pr
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Auto merge PR
-        if: needs.analyze-pr.outputs.onlyIgnored == 'true'
-        run: gh pr merge ${{ github.event.pull_request.number }} --merge --auto
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
