@@ -31,7 +31,7 @@ jobs:
         with:
           script: |
             const { data } = await github.rest.repos.getContent({
-              owner: "BlueBuildr",
+              owner: "Tools4everBV",
               repo: ".github",
               path: ".github/config/ignoreFiles.json",
               ref: "main"
