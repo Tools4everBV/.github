@@ -1,6 +1,6 @@
-##############################
-# Workflow: Create Release
-# Version: 0.0.7
+############################## 
+# Workflow: Create Release 
+# Version: 0.0.7 
 ##############################
 name: Create Release
 
@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -46,7 +47,8 @@ jobs:
               TYPE="icon"
               break
             fi
-            if ! echo "${{ steps.ignore.outputs.ignore }}" | grep -qx "$file"; then
+
+            if ! grep -qx "$file" <<< "${{ steps.ignore.outputs.ignore }}"; then
               TYPE="normal"
             fi
           done
@@ -68,68 +70,55 @@ jobs:
         if: steps.classify.outputs.type != 'ignored'
         run: |
           LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-      
-          TYPE="${{ steps.classify.outputs.type }}"
-      
-          if [[ "$TYPE" == "icon" ]]; then
-            MAJOR=$(echo $LATEST | cut -d. -f1 | tr -d 'v')
-            MINOR=$(echo $LATEST | cut -d. -f2)
-            PATCH=$(echo $LATEST | cut -d. -f3)
+
+          MAJOR=$(echo $LATEST | cut -d. -f1 | tr -d 'v')
+          MINOR=$(echo $LATEST | cut -d. -f2)
+          PATCH=$(echo $LATEST | cut -d. -f3)
+
+          if [ "${{ steps.classify.outputs.type }}" == "icon" ]; then
             PATCH=$((PATCH + 1))
             VERSION="v$MAJOR.$MINOR.$PATCH"
-      
-          elif [[ -n "${{ inputs.version }}" ]]; then
+
+          elif [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
-      
-          elif [[ "$TYPE" == "normal" && "${{ steps.changelog.outputs.changed }}" == "true" ]]; then
+
+          elif [ "${{ steps.changelog.outputs.changed }}" == "true" ]; then
             VERSION=$(grep -oP '^## \[\K[^]]+' CHANGELOG.md | head -n 1)
             if [ -z "$VERSION" ]; then
               echo "No versions found in CHANGELOG.md."
               exit 1
             fi
-      
           else
-            # fallback patch bump
-            MAJOR=$(echo $LATEST | cut -d. -f1 | tr -d 'v')
-            MINOR=$(echo $LATEST | cut -d. -f2)
-            PATCH=$(echo $LATEST | cut -d. -f3)
             PATCH=$((PATCH + 1))
             VERSION="v$MAJOR.$MINOR.$PATCH"
           fi
 
           [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION_NO_V=${VERSION#v}" >> $GITHUB_ENV
 
-      # Extract Release Notes for normal changes
-      - name: Extract Release Notes from CHANGELOG.md
-        if: steps.classify.outputs.type == 'normal' && steps.changelog.outputs.changed == 'true' && inputs.version == ''
+      # Release Notes
+      - name: Extract Release Notes
         run: |
-          awk '/## \['"${VERSION_NO_V}"'\]/{flag=1; next} /## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
-          if [ ! -s release_notes.txt ]; then
-            echo "No release notes found for version ${VERSION_NO_V}."
-            exit 1
+          if [ "${{ steps.classify.outputs.type }}" == "icon" ]; then
+            echo "Updated connector icon." > release_notes.txt
+
+          elif [ "${{ steps.classify.outputs.type }}" == "normal" ] && [ "${{ steps.changelog.outputs.changed }}" == "true" ] && [ -z "${{ inputs.version }}" ]; then
+            awk '/## \['"${VERSION_NO_V}"'\]/{flag=1; next} /## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
+            if [ ! -s release_notes.txt ]; then
+              echo "No release notes found for version ${VERSION_NO_V}."
+              exit 1
+            fi
+
+          elif [ -n "${{ inputs.version }}" ]; then
+            echo "Release notes not provided for version ${VERSION}." > release_notes.txt
+
+          else
+            echo "Auto-generated release for ${VERSION}" > release_notes.txt
           fi
 
-      # Default Release Notes (manual version input)
-      - name: Default Release Notes
-        if: steps.classify.outputs.type == 'normal' && inputs.version != ''
-        run: |
-          echo "Release notes not provided for version ${VERSION}." > release_notes.txt
-
-      # Icon Release Notes
-      - name: Icon Release Notes
-        if: steps.classify.outputs.type == 'icon'
-        run: |
-          echo "Updated connector icon." > release_notes.txt
-
-      # Fallback Release Notes (if nothing else)
-      - name: Fallback Release Notes
-        if: steps.classify.outputs.type != 'ignored' && [ ! -f release_notes.txt ]
-        run: |
-          echo "Auto-generated release for ${VERSION}" > release_notes.txt
-
-      # Create GitHub Release
+      # Create Release
       - name: Create GitHub Release
         if: steps.classify.outputs.type != 'ignored'
         run: |
