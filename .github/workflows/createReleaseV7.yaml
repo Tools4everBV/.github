@@ -43,7 +43,7 @@ jobs:
           TYPE="ignored"
 
           for file in $CHANGED; do
-            if [[ "$file" == "Icon.png" ]]; then
+            if [[ "$(basename "$file")" == "Icon.png" ]]; then
               TYPE="icon"
               break
             fi
