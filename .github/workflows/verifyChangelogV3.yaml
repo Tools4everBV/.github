@@ -1,0 +1,132 @@
+####################################
+# Workflow: Verify CHANGELOG
+# Version:  0.0.3
+####################################
+name: VerifyChangelog
+on:
+  workflow_call:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+
+  analyze-pr:
+    runs-on: ubuntu-latest
+
+    outputs:
+      onlyIgnored: ${{ steps.check.outputs.onlyIgnored }}
+      hasChangelog: ${{ steps.check.outputs.hasChangelog }}
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Get ignore list
+        id: ignore
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.getContent({
+              owner: "Tools4everBV",
+              repo: ".github",
+              path: ".github/config/ignoreFiles.json",
+              ref: "main"
+            });
+            const content = Buffer.from(data.content, "base64").toString();
+            const ignoreList = JSON.parse(content);
+            core.setOutput("list", JSON.stringify(ignoreList));
+
+      - name: Analyze PR
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ignoreList = JSON.parse('${{ steps.ignore.outputs.list }}');
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number
+              }
+            );
+
+            const changed = files.map(f => f.filename);
+
+            const onlyIgnored =
+              changed.length > 0 &&
+              changed.every(f => ignoreList.includes(f));
+
+            const hasChangelog =
+              changed.includes("CHANGELOG.md");
+
+            core.setOutput("onlyIgnored", onlyIgnored);
+            core.setOutput("hasChangelog", hasChangelog);
+
+            if (!onlyIgnored && !hasChangelog) {
+              const message = `
+               **CHANGELOG.md must be updated**
+            
+            Changed files:
+            
+            ${changed.map(f => `- ${f}`).join('\n')}
+            
+            Please add an entry to **CHANGELOG.md** describing the change.
+            `;
+            
+                          // Check if bot comment already exists
+                          const comments = await github.rest.issues.listComments({
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
+                            issue_number: context.payload.pull_request.number
+                          });
+            
+                          const botComment = comments.data.find(c =>
+                            c.user.type === "Bot" &&
+                            c.body.includes("**CHANGELOG.md must be updated**")
+                          );
+            
+                          if (botComment) {
+                            // Update existing comment
+                            await github.rest.issues.updateComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              comment_id: botComment.id,
+                              body: message
+                            });
+                          } else {
+                            // Create new comment
+                            await github.rest.issues.createComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: context.payload.pull_request.number,
+                              body: message
+                            });
+                          }
+            
+                          core.setFailed("CHANGELOG.md must be updated.");
+                        }
+
+  auto-merge-ignore:
+    needs: analyze-pr
+    runs-on: ubuntu-latest
+    if: needs.analyze-pr.outputs.onlyIgnored == 'true' && github.event_name == 'pull_request'
+  
+    steps:
+    - name: Auto approve PR
+      run: gh pr review ${{ github.event.pull_request.number }} --approve --repo ${{ github.repository }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Enable auto merge
+      run: gh pr merge ${{ github.event.pull_request.number }} --auto --merge --repo ${{ github.repository }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
