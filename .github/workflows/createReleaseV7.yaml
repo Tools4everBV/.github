@@ -28,16 +28,13 @@ jobs:
       - name: Detect changed files
         id: changes
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
-
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
           echo "$CHANGED_FILES"
-
           if echo "$CHANGED_FILES" | grep -q "CHANGELOG.md"; then
             echo "changelog=true" >> $GITHUB_OUTPUT
           else
             echo "changelog=false" >> $GITHUB_OUTPUT
           fi
-
           if echo "$CHANGED_FILES" | grep -q "Icon.png"; then
             echo "icon=true" >> $GITHUB_OUTPUT
           else
