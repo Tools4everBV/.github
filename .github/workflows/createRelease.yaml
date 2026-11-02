@@ -1,6 +1,6 @@
 ##############################
 # Workflow: Create Release
-# Version:  0.0.3
+# Version:  0.0.7
 ##############################
 name: Create Release
 
@@ -8,7 +8,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Version number (e.g., v1.0.0). Leave blank to use the latest version from CHANGELOG.md.'
+        description: 'Optional version override (e.g., v1.0.0)'
         required: false
         type: string
 
@@ -22,22 +22,38 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Determine Version
+      - name: Detect changed files
+        id: changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          echo "$CHANGED_FILES"
+          if echo "$CHANGED_FILES" | grep -q "CHANGELOG.md"; then
+            echo "changelog=true" >> $GITHUB_OUTPUT
+          else
+            echo "changelog=false" >> $GITHUB_OUTPUT
+          fi
+          if echo "$CHANGED_FILES" | grep -q "Icon.png"; then
+            echo "icon=true" >> $GITHUB_OUTPUT
+          else
+            echo "icon=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if no relevant changes
+        if: steps.changes.outputs.changelog != 'true' && steps.changes.outputs.icon != 'true'
+        run: |
+          echo "No CHANGELOG.md or Icon.png changes detected. Skipping release."
+          exit 0
+
+      - name: Determine Version (from input or changelog)
+        if: steps.changes.outputs.changelog == 'true'
         run: |
           if [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
           else
-            if [ -f CHANGELOG.md ]; then
-              VERSION=$(grep -oP '^## \[\K[^]]+' CHANGELOG.md | head -n 1)
-              if [ -z "$VERSION" ]; then
-                echo "No versions found in CHANGELOG.md."
-                exit 1
-              fi
-            else
-              echo "CHANGELOG.md not found. Cannot determine version."
-              exit 1
-            fi
+            VERSION=$(grep -oP '^## \[\K[^]]+' CHANGELOG.md | head -n 1)
           fi
 
           [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
@@ -45,8 +61,27 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION_NO_V=${VERSION#v}" >> $GITHUB_ENV
 
+      - name: Determine Version (icon patch bump)
+        if: steps.changes.outputs.changelog != 'true' && steps.changes.outputs.icon == 'true'
+        run: |
+          LATEST=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+
+          if [ -z "$LATEST" ]; then
+            VERSION="v0.0.1"
+          else
+            VERSION_NO_V=${LATEST#v}
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NO_V"
+            PATCH=$((PATCH + 1))
+            VERSION="v$MAJOR.$MINOR.$PATCH"
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION_NO_V=${VERSION#v}" >> $GITHUB_ENV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract Release Notes from CHANGELOG.md
-        if: ${{ inputs.version == '' }}
+        if: steps.changes.outputs.changelog == 'true'
         run: |
           awk '/## \['"${VERSION_NO_V}"'\]/{flag=1; next} /## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
 
@@ -55,15 +90,27 @@ jobs:
             exit 1
           fi
 
-      - name: Default Release Notes
-        if: ${{ inputs.version != '' }}
+      - name: Generate Release Notes for Icon change
+        if: steps.changes.outputs.changelog != 'true' && steps.changes.outputs.icon == 'true'
         run: |
-          echo "Release notes not provided for version ${VERSION}." > release_notes.txt
+          echo "Patch release: updated Icon.png" > release_notes.txt
+
+      - name: Check if release exists
+        id: check_release
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
+        if: steps.check_release.outputs.exists == 'false'
         run: |
-          gh release create "${VERSION}" \
-            --title "${VERSION}" \
+          gh release create "$VERSION" \
+            --title "$VERSION" \
             --notes-file release_notes.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
