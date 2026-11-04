@@ -1,6 +1,6 @@
 ##############################
 # Workflow: Create Release
-# Version:  0.0.7
+# Version:  0.0.8
 ##############################
 name: Create Release
 
@@ -22,30 +22,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Detect changed files
         id: changes
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          # Ask the API instead of git diff: the PR head commit is often not in the clone (squash merge, deleted branch, fork)
+          CHANGED_FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
           echo "$CHANGED_FILES"
-          if echo "$CHANGED_FILES" | grep -q "CHANGELOG.md"; then
-            echo "changelog=true" >> $GITHUB_OUTPUT
-          else
-            echo "changelog=false" >> $GITHUB_OUTPUT
-          fi
-          if echo "$CHANGED_FILES" | grep -q "Icon.png"; then
-            echo "icon=true" >> $GITHUB_OUTPUT
-          else
-            echo "icon=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Stop if no relevant changes
-        if: steps.changes.outputs.changelog != 'true' && steps.changes.outputs.icon != 'true'
-        run: |
-          echo "No CHANGELOG.md or Icon.png changes detected. Skipping release."
-          exit 0
+          echo "changelog=$(echo "$CHANGED_FILES" | grep -q 'CHANGELOG.md' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "icon=$(echo "$CHANGED_FILES" | grep -q 'Icon.png' && echo true || echo false)" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine Version (from input or changelog)
         if: steps.changes.outputs.changelog == 'true'
@@ -97,6 +84,7 @@ jobs:
 
       - name: Check if release exists
         id: check_release
+        if: env.VERSION != ''
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -107,7 +95,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
-        if: steps.check_release.outputs.exists == 'false'
+        if: env.VERSION != '' && steps.check_release.outputs.exists == 'false'
         run: |
           gh release create "$VERSION" \
             --title "$VERSION" \
